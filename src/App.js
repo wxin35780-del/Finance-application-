@@ -22,13 +22,14 @@ const CATEGORIES = {
 
 const MONTHS_TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
 const DAYS_TH = ["อา","จ","อ","พ","พฤ","ศ","ส"];
-
 const GOLD="#C9A84C",GOLD_LIGHT="#E8C96A",GOLD_DARK="#8B6914",BORDER_GOLD="#3D2E10",
   BG_BASE="#080603",BG_CARD="#0E0B05",BG_SECTION="#120E06",BORDER="#2A2010",
   TEXT_MAIN="#F5ECD7",TEXT_DIM="#7A6840",TEXT_MID="#A08850",GREEN="#4ade80",RED="#f87171";
+const CAT_COLORS=["#C9A84C","#4ade80","#60a5fa","#f87171","#a78bfa","#fb923c","#34d399","#f472b6","#facc15","#38bdf8"];
 
 const formatCurrency=(n)=>new Intl.NumberFormat("th-TH",{style:"currency",currency:"THB",maximumFractionDigits:0}).format(n);
 const formatK=(n)=>{if(Math.abs(n)>=1000000)return(n/1000000).toFixed(1)+"M";if(Math.abs(n)>=1000)return(n/1000).toFixed(1)+"K";return Math.round(n).toString();};
+const isOther=(cat)=>cat==="other_income"||cat==="other_expense";
 
 export default function App() {
   const [view, setView] = useState("dashboard");
@@ -50,15 +51,41 @@ export default function App() {
 
   const getDateData=(k)=>data[k]||{income:[],expense:[],target:false};
   const getDayTotals=(k)=>{const d=getDateData(k);const income=d.income.reduce((s,x)=>s+x.amount,0);const expense=d.expense.reduce((s,x)=>s+x.amount,0);return{income,expense,profit:income-expense};};
-  const getMonthData=(year,month)=>{let income=0,expense=0;const catIncome={},catExpense={};const days=new Date(year,month+1,0).getDate();for(let d=1;d<=days;d++){const key=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;if(!data[key])continue;data[key].income.forEach((x)=>{income+=x.amount;catIncome[x.cat]=(catIncome[x.cat]||0)+x.amount;});data[key].expense.forEach((x)=>{expense+=x.amount;catExpense[x.cat]=(catExpense[x.cat]||0)+x.amount;});}return{income,expense,profit:income-expense,catIncome,catExpense};};
-  const getYearData=(year)=>{let income=0,expense=0;const monthly=[];for(let m=0;m<12;m++){const md=getMonthData(year,m);income+=md.income;expense+=md.expense;monthly.push(md);}return{income,expense,profit:income-expense,monthly};};
+
+  const getMonthData=(year,month)=>{
+    let income=0,expense=0;
+    const catIncome={},catExpense={};
+    const days=new Date(year,month+1,0).getDate();
+    for(let d=1;d<=days;d++){
+      const key=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      if(!data[key])continue;
+      data[key].income.forEach((x)=>{income+=x.amount;let k=x.cat;if(isOther(x.cat)&&x.note&&x.note.trim())k="other::"+x.note.trim();catIncome[k]=(catIncome[k]||0)+x.amount;});
+      data[key].expense.forEach((x)=>{expense+=x.amount;let k=x.cat;if(isOther(x.cat)&&x.note&&x.note.trim())k="other::"+x.note.trim();catExpense[k]=(catExpense[k]||0)+x.amount;});
+    }
+    return{income,expense,profit:income-expense,catIncome,catExpense};
+  };
+
+  const getYearData=(year)=>{
+    let income=0,expense=0;const catIncome={},catExpense={};
+    for(let m=0;m<12;m++){const md=getMonthData(year,m);income+=md.income;expense+=md.expense;Object.entries(md.catIncome).forEach(([k,v])=>catIncome[k]=(catIncome[k]||0)+v);Object.entries(md.catExpense).forEach(([k,v])=>catExpense[k]=(catExpense[k]||0)+v);}
+    return{income,expense,profit:income-expense,catIncome,catExpense};
+  };
 
   const todayData=getDayTotals(today);
   const monthData=getMonthData(now.getFullYear(),now.getMonth());
   const yearData=getYearData(now.getFullYear());
 
-  const addEntry=()=>{const amount=parseFloat(form.amount);if(!amount||amount<=0)return;setData((prev)=>{const existing=prev[selectedDate]||{income:[],expense:[],target:false};return{...prev,[selectedDate]:{...existing,[form.type]:[...existing[form.type],{cat:form.cat,amount}]}};});setForm({type:"income",cat:"salary",amount:"",note:""});};
+  const addEntry=()=>{
+    const amount=parseFloat(form.amount);if(!amount||amount<=0)return;
+    const entry={cat:form.cat,amount};
+    if(isOther(form.cat)&&form.note.trim())entry.note=form.note.trim();
+    setData((prev)=>{const existing=prev[selectedDate]||{income:[],expense:[],target:false};return{...prev,[selectedDate]:{...existing,[form.type]:[...existing[form.type],entry]}};});
+    setForm({type:form.type,cat:form.cat,amount:"",note:""});
+  };
   const toggleTarget=(dateKey)=>{setData((prev)=>({...prev,[dateKey]:{...(prev[dateKey]||{income:[],expense:[]}),target:!prev[dateKey]?.target}}));};
+
+  const getCatLabel=(key)=>{if(key.startsWith("other::"))return"อื่นๆ: "+key.replace("other::","");const all=[...CATEGORIES.income,...CATEGORIES.expense];return all.find(c=>c.id===key)?.label||key;};
+  const getCatIcon=(key)=>{if(key.startsWith("other::"))return"📝";const all=[...CATEGORIES.income,...CATEGORIES.expense];return all.find(c=>c.id===key)?.icon||"💰";};
 
   return (
     <div style={S.root}>
@@ -84,14 +111,15 @@ export default function App() {
         <SCard label="กำไร / ขาดทุน" value={todayData.profit} color={todayData.profit>=0?GREEN:RED} icon="=" big/>
       </div>
       <div style={S.tabs}>
-        {["dashboard","add","history"].map(t=>(
+        {["dashboard","category","add","history"].map(t=>(
           <button key={t} style={{...S.tab,...(view===t?S.tabActive:{})}} onClick={()=>setView(t)}>
-            {t==="dashboard"?"📊 Dashboard":t==="add"?"➕ เพิ่ม":"📋 ประวัติ"}
+            {t==="dashboard"?"📊":t==="category"?"🗂️":t==="add"?"➕":"📋"}
           </button>
         ))}
       </div>
       <div style={S.content}>
-        {view==="dashboard"&&<Dashboard period={period} setPeriod={setPeriod} todayData={todayData} monthData={monthData} yearData={yearData} targetGoal={targetGoal} data={data} now={now} toggleTarget={toggleTarget} today={today}/>}
+        {view==="dashboard"&&<Dashboard period={period} setPeriod={setPeriod} todayData={todayData} monthData={monthData} yearData={yearData} targetGoal={targetGoal} data={data} now={now} toggleTarget={toggleTarget} today={today} getCatLabel={getCatLabel} getCatIcon={getCatIcon}/>}
+        {view==="category"&&<CategoryDashboard period={period} setPeriod={setPeriod} monthData={monthData} yearData={yearData} todayData={todayData} data={data} now={now} getCatLabel={getCatLabel} getCatIcon={getCatIcon}/>}
         {view==="add"&&<AddEntry form={form} setForm={setForm} addEntry={addEntry} selectedDate={selectedDate} setSelectedDate={setSelectedDate}/>}
         {view==="history"&&<History data={data} now={now} getDayTotals={getDayTotals} setSelectedDate={setSelectedDate} setView={setView}/>}
       </div>
@@ -101,7 +129,7 @@ export default function App() {
 
 function SCard({label,value,color,icon,big}){return(<div style={{...S.card,...(big?S.cardBig:{})}} className="cardHover"><div style={{...S.cardIcon,color}}>{icon}</div><div style={S.cardLabel}>{label}</div><div style={{...S.cardValue,color}}>{formatK(Math.abs(Math.round(value)))}</div></div>);}
 
-function Dashboard({period,setPeriod,todayData,monthData,yearData,targetGoal,data,now,toggleTarget,today}){
+function Dashboard({period,setPeriod,todayData,monthData,yearData,targetGoal,data,now,toggleTarget,today,getCatLabel,getCatIcon}){
   const currentData=period==="daily"?todayData:period==="monthly"?monthData:yearData;
   const profitRate=currentData.income>0?(currentData.profit/currentData.income)*100:0;
   const targetRate=Math.min((monthData.income/targetGoal)*100,100);
@@ -143,7 +171,7 @@ function Dashboard({period,setPeriod,todayData,monthData,yearData,targetGoal,dat
       </div>
       {topExpenses.length>0&&(<div style={S.section}>
         <div style={S.sectionTitle}>💸 หมวดรายจ่ายหลัก</div>
-        {topExpenses.map(([cat,amount])=>{const info=CATEGORIES.expense.find(c=>c.id===cat)||{label:cat,icon:"💸"};const pct=totalExp>0?(amount/totalExp)*100:0;return(<div key={cat} style={S.catRow}><span style={S.catIcon}>{info.icon}</span><div style={S.catInfo}><div style={S.catName}>{info.label}</div><div style={S.catBarWrap}><div style={{...S.catBar,width:`${pct}%`}}/></div></div><span style={S.catAmt}>{formatK(Math.round(amount))}</span></div>);})}
+        {topExpenses.map(([cat,amount])=>{const pct=totalExp>0?(amount/totalExp)*100:0;return(<div key={cat} style={S.catRow}><span style={S.catIcon}>{getCatIcon(cat)}</span><div style={S.catInfo}><div style={S.catName}>{getCatLabel(cat)}</div><div style={S.catBarWrap}><div style={{...S.catBar,width:`${pct}%`}}/></div></div><span style={S.catAmt}>{formatK(Math.round(amount))}</span></div>);})}
       </div>)}
       <div style={S.section}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -161,20 +189,91 @@ function Dashboard({period,setPeriod,todayData,monthData,yearData,targetGoal,dat
       </div>
     </div>
   );
-}function DonutChart({rate}){const r=40,cx=50,cy=50,circ=2*Math.PI*r,dash=(rate/100)*circ;return(<svg width="100" height="100" viewBox="0 0 100 100"><defs><linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={GOLD_DARK}/><stop offset="100%" stopColor={GOLD_LIGHT}/></linearGradient></defs><circle cx={cx} cy={cy} r={r} fill="none" stroke={BORDER} strokeWidth="12"/><circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#goldGrad)" strokeWidth="12" strokeDasharray={`${dash} ${circ-dash}`} strokeLinecap="round" strokeDashoffset={circ/4} style={{transition:"stroke-dasharray 1s ease"}}/><text x={cx} y={cy+5} textAnchor="middle" fill={GOLD_LIGHT} fontSize="13" fontWeight="700">{rate.toFixed(0)}%</text></svg>);}
+}function CategoryDashboard({period,setPeriod,monthData,yearData,todayData,getCatLabel,getCatIcon}){
+  const [activeTab,setActiveTab]=useState("expense");
+  const currentData=period==="daily"?todayData:period==="monthly"?monthData:yearData;
+  const catMap=activeTab==="expense"?(currentData.catExpense||{}):(currentData.catIncome||{});
+  const entries=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  const total=entries.reduce((s,[,v])=>s+v,0);
+  return(
+    <div style={S.dashWrap} className="fadeIn">
+      <div style={S.addTitle}>🗂️ วิเคราะห์หมวดหมู่</div>
+      <div style={S.periodRow}>{["daily","monthly","yearly"].map(p=>(<button key={p} style={{...S.periodBtn,...(period===p?S.periodActive:{})}} onClick={()=>setPeriod(p)}>{p==="daily"?"วัน":p==="monthly"?"เดือน":"ปี"}</button>))}</div>
+      <div style={S.typeToggle}>
+        <button style={{...S.typeBtn,...(activeTab==="income"?S.typeBtnIncome:{})}} onClick={()=>setActiveTab("income")}>↑ รายได้</button>
+        <button style={{...S.typeBtn,...(activeTab==="expense"?S.typeBtnExpense:{})}} onClick={()=>setActiveTab("expense")}>↓ รายจ่าย</button>
+      </div>
+      <div style={S.section}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+          <div style={S.sectionTitle}>{activeTab==="expense"?"รายจ่ายทั้งหมด":"รายได้ทั้งหมด"}</div>
+          <div style={{color:activeTab==="expense"?RED:GREEN,fontWeight:800,fontSize:16}}>{formatCurrency(Math.round(total))}</div>
+        </div>
+        {entries.length===0&&<div style={{color:TEXT_DIM,textAlign:"center",padding:"20px 0"}}>ยังไม่มีข้อมูลครับ</div>}
+        {entries.map(([cat,amount],i)=>{
+          const pct=total>0?(amount/total)*100:0;
+          const color=CAT_COLORS[i%CAT_COLORS.length];
+          return(
+            <div key={cat} style={{marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                <span style={{fontSize:18}}>{getCatIcon(cat)}</span>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:13,color:TEXT_MAIN,fontWeight:600}}>{getCatLabel(cat)}</span>
+                    <span style={{fontSize:13,color,fontWeight:700}}>{formatCurrency(Math.round(amount))}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
+                    <div style={{flex:1,height:6,background:BORDER,borderRadius:999,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:999,transition:"width 0.8s ease"}}/>
+                    </div>
+                    <span style={{fontSize:11,color:TEXT_DIM,minWidth:32,textAlign:"right"}}>{pct.toFixed(1)}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {entries.length>0&&(
+        <div style={S.section}>
+          <div style={S.sectionTitle}>สัดส่วน</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
+            {entries.map(([cat,amount],i)=>{
+              const pct=total>0?(amount/total)*100:0;
+              const color=CAT_COLORS[i%CAT_COLORS.length];
+              return(<div key={cat} style={{display:"flex",alignItems:"center",gap:4,background:BG_CARD,border:`1px solid ${BORDER}`,borderRadius:20,padding:"4px 10px"}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:color,display:"inline-block"}}/>
+                <span style={{fontSize:11,color:TEXT_MID}}>{getCatIcon(cat)} {getCatLabel(cat)}</span>
+                <span style={{fontSize:11,color,fontWeight:700}}>{pct.toFixed(0)}%</span>
+              </div>);
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DonutChart({rate}){const r=40,cx=50,cy=50,circ=2*Math.PI*r,dash=(rate/100)*circ;return(<svg width="100" height="100" viewBox="0 0 100 100"><defs><linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={GOLD_DARK}/><stop offset="100%" stopColor={GOLD_LIGHT}/></linearGradient></defs><circle cx={cx} cy={cy} r={r} fill="none" stroke={BORDER} strokeWidth="12"/><circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#goldGrad)" strokeWidth="12" strokeDasharray={`${dash} ${circ-dash}`} strokeLinecap="round" strokeDashoffset={circ/4} style={{transition:"stroke-dasharray 1s ease"}}/><text x={cx} y={cy+5} textAnchor="middle" fill={GOLD_LIGHT} fontSize="13" fontWeight="700">{rate.toFixed(0)}%</text></svg>);}
 
 function StatBox({label,value,color}){return(<div style={S.statBox}><div style={S.statLabel}>{label}</div><div style={{...S.statValue,color}}>{formatK(Math.round(value))}</div></div>);}
 
 function AddEntry({form,setForm,addEntry,selectedDate,setSelectedDate}){
   const cats=form.type==="income"?CATEGORIES.income:CATEGORIES.expense;
+  const showNote=isOther(form.cat);
   return(<div style={S.addWrap} className="fadeIn">
     <div style={S.addTitle}>เพิ่มรายการ</div>
     <div style={S.typeToggle}>
-      <button style={{...S.typeBtn,...(form.type==="income"?S.typeBtnIncome:{})}} onClick={()=>setForm({...form,type:"income",cat:"salary"})}>↑ รายได้</button>
-      <button style={{...S.typeBtn,...(form.type==="expense"?S.typeBtnExpense:{})}} onClick={()=>setForm({...form,type:"expense",cat:"food"})}>↓ รายจ่าย</button>
+      <button style={{...S.typeBtn,...(form.type==="income"?S.typeBtnIncome:{})}} onClick={()=>setForm({...form,type:"income",cat:"salary",note:""})}>↑ รายได้</button>
+      <button style={{...S.typeBtn,...(form.type==="expense"?S.typeBtnExpense:{})}} onClick={()=>setForm({...form,type:"expense",cat:"food",note:""})}>↓ รายจ่าย</button>
     </div>
     <div style={S.field}><label style={S.label}>วันที่</label><input type="date" style={S.input} value={selectedDate} onChange={(e)=>setSelectedDate(e.target.value)}/></div>
-    <div style={S.field}><label style={S.label}>หมวดหมู่</label><div style={S.catGrid}>{cats.map(c=>(<button key={c.id} style={{...S.catChip,...(form.cat===c.id?S.catChipActive:{})}} onClick={()=>setForm({...form,cat:c.id})}>{c.icon} {c.label}</button>))}</div></div>
+    <div style={S.field}><label style={S.label}>หมวดหมู่</label><div style={S.catGrid}>{cats.map(c=>(<button key={c.id} style={{...S.catChip,...(form.cat===c.id?S.catChipActive:{})}} onClick={()=>setForm({...form,cat:c.id,note:""})}>{c.icon} {c.label}</button>))}</div></div>
+    {showNote&&(
+      <div style={S.field} className="fadeIn">
+        <label style={S.label}>หมายเหตุ (ระบุรายละเอียด)</label>
+        <input type="text" style={S.input} placeholder="เช่น โบนัส, ค่าน้ำค่าไฟ..." value={form.note} onChange={(e)=>setForm({...form,note:e.target.value})}/>
+      </div>
+    )}
     <div style={S.field}><label style={S.label}>จำนวนเงิน (฿)</label><input type="number" style={S.input} placeholder="0" value={form.amount} onChange={(e)=>setForm({...form,amount:e.target.value})}/></div>
     <button style={S.submitBtn} onClick={addEntry}>✦ บันทึกรายการ</button>
   </div>);
@@ -212,7 +311,7 @@ const S={
   cardLabel:{fontSize:11,color:TEXT_DIM,marginBottom:4},
   cardValue:{fontSize:20,fontWeight:800,letterSpacing:"-0.5px"},
   tabs:{display:"flex",background:"#060401",borderTop:`1px solid ${BORDER}`,borderBottom:`1px solid ${BORDER}`},
-  tab:{flex:1,padding:"12px 4px",background:"none",border:"none",color:TEXT_DIM,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"},
+  tab:{flex:1,padding:"12px 4px",background:"none",border:"none",color:TEXT_DIM,fontSize:18,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"},
   tabActive:{color:GOLD,borderBottom:`2px solid ${GOLD}`,fontWeight:700},
   content:{flex:1,overflowY:"auto",paddingBottom:30},
   dashWrap:{padding:"12px 16px"},
