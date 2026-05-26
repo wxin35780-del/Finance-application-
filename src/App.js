@@ -43,6 +43,7 @@ export default function App() {
   });
   const [editTarget, setEditTarget] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [editModal, setEditModal] = useState(null);
   const today = new Date().toISOString().split("T")[0];
   const now = new Date();
 
@@ -51,10 +52,8 @@ export default function App() {
 
   const getDateData=(k)=>data[k]||{income:[],expense:[],target:false};
   const getDayTotals=(k)=>{const d=getDateData(k);const income=d.income.reduce((s,x)=>s+x.amount,0);const expense=d.expense.reduce((s,x)=>s+x.amount,0);return{income,expense,profit:income-expense};};
-
   const getMonthData=(year,month)=>{
-    let income=0,expense=0;
-    const catIncome={},catExpense={};
+    let income=0,expense=0;const catIncome={},catExpense={};
     const days=new Date(year,month+1,0).getDate();
     for(let d=1;d<=days;d++){
       const key=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
@@ -64,7 +63,6 @@ export default function App() {
     }
     return{income,expense,profit:income-expense,catIncome,catExpense};
   };
-
   const getYearData=(year)=>{
     let income=0,expense=0;const catIncome={},catExpense={};
     for(let m=0;m<12;m++){const md=getMonthData(year,m);income+=md.income;expense+=md.expense;Object.entries(md.catIncome).forEach(([k,v])=>catIncome[k]=(catIncome[k]||0)+v);Object.entries(md.catExpense).forEach(([k,v])=>catExpense[k]=(catExpense[k]||0)+v);}
@@ -82,8 +80,9 @@ export default function App() {
     setData((prev)=>{const existing=prev[selectedDate]||{income:[],expense:[],target:false};return{...prev,[selectedDate]:{...existing,[form.type]:[...existing[form.type],entry]}};});
     setForm({type:form.type,cat:form.cat,amount:"",note:""});
   };
+  const deleteEntry=(dateKey,type,index)=>{setData((prev)=>{const d={...prev[dateKey]};d[type]=d[type].filter((_,i)=>i!==index);return{...prev,[dateKey]:d};});setEditModal(null);};
+  const saveEdit=(dateKey,type,index,newEntry)=>{setData((prev)=>{const d={...prev[dateKey]};d[type]=d[type].map((x,i)=>i===index?newEntry:x);return{...prev,[dateKey]:d};});setEditModal(null);};
   const toggleTarget=(dateKey)=>{setData((prev)=>({...prev,[dateKey]:{...(prev[dateKey]||{income:[],expense:[]}),target:!prev[dateKey]?.target}}));};
-
   const getCatLabel=(key)=>{if(key.startsWith("other::"))return"อื่นๆ: "+key.replace("other::","");const all=[...CATEGORIES.income,...CATEGORIES.expense];return all.find(c=>c.id===key)?.label||key;};
   const getCatIcon=(key)=>{if(key.startsWith("other::"))return"📝";const all=[...CATEGORIES.income,...CATEGORIES.expense];return all.find(c=>c.id===key)?.icon||"💰";};
 
@@ -119,10 +118,11 @@ export default function App() {
       </div>
       <div style={S.content}>
         {view==="dashboard"&&<Dashboard period={period} setPeriod={setPeriod} todayData={todayData} monthData={monthData} yearData={yearData} targetGoal={targetGoal} data={data} now={now} toggleTarget={toggleTarget} today={today} getCatLabel={getCatLabel} getCatIcon={getCatIcon}/>}
-        {view==="category"&&<CategoryDashboard period={period} setPeriod={setPeriod} monthData={monthData} yearData={yearData} todayData={todayData} data={data} now={now} getCatLabel={getCatLabel} getCatIcon={getCatIcon}/>}
+        {view==="category"&&<CategoryDashboard period={period} setPeriod={setPeriod} monthData={monthData} yearData={yearData} todayData={todayData} getCatLabel={getCatLabel} getCatIcon={getCatIcon}/>}
         {view==="add"&&<AddEntry form={form} setForm={setForm} addEntry={addEntry} selectedDate={selectedDate} setSelectedDate={setSelectedDate}/>}
-        {view==="history"&&<History data={data} now={now} getDayTotals={getDayTotals} setSelectedDate={setSelectedDate} setView={setView}/>}
+        {view==="history"&&<History data={data} now={now} getDayTotals={getDayTotals} setEditModal={setEditModal} getCatLabel={getCatLabel} getCatIcon={getCatIcon}/>}
       </div>
+      {editModal&&<EditModal modal={editModal} setEditModal={setEditModal} deleteEntry={deleteEntry} saveEdit={saveEdit}/>}
     </div>
   );
 }
@@ -148,41 +148,13 @@ function Dashboard({period,setPeriod,todayData,monthData,yearData,targetGoal,dat
     <div style={S.dashWrap} className="fadeIn">
       <div style={S.periodRow}>{["daily","monthly","yearly"].map(p=>(<button key={p} style={{...S.periodBtn,...(period===p?S.periodActive:{})}} onClick={()=>setPeriod(p)}>{p==="daily"?"วัน":p==="monthly"?"เดือน":"ปี"}</button>))}</div>
       <div style={S.statRow}><StatBox label="รายได้" value={currentData.income} color={GREEN}/><StatBox label="รายจ่าย" value={currentData.expense} color={RED}/><StatBox label={currentData.profit>=0?"กำไร":"ขาดทุน"} value={Math.abs(currentData.profit)} color={currentData.profit>=0?GREEN:RED}/></div>
+      <div style={S.section}><div style={S.sectionTitle}>🎯 เป้าหมายรายเดือน</div><div style={S.progressBar}><div style={{...S.progressFill,width:`${targetRate}%`}} className="progressAnim"/></div><div style={S.progressText}><span style={{color:GREEN}}>{formatCurrency(monthData.income)}</span><span style={{color:TEXT_DIM}}> / {formatCurrency(targetGoal)}</span><span style={{color:GOLD,marginLeft:8}}>{targetRate.toFixed(0)}%</span></div></div>
+      <div style={S.section}><div style={S.sectionTitle}>📊 สัดส่วนกำไร</div><div style={S.donutRow}><DonutChart rate={Math.max(0,profitRate)}/><div style={S.donutLegend}><div style={S.legendItem}><span style={{...S.dot,background:GREEN}}/><span style={S.legendText}>กำไร {Math.max(0,profitRate).toFixed(1)}%</span></div><div style={S.legendItem}><span style={{...S.dot,background:RED}}/><span style={S.legendText}>รายจ่าย {Math.max(0,100-profitRate).toFixed(1)}%</span></div><div style={{marginTop:8,color:currentData.profit>=0?GREEN:RED,fontSize:18,fontWeight:700}}>{formatCurrency(Math.round(currentData.profit))}</div></div></div></div>
+      <div style={S.section}><div style={S.sectionTitle}>📈 ภาพรวมรายรับ-รายจ่าย</div><div style={S.barChart}>{bars.map((b,i)=>(<div key={i} style={S.barGroup}><div style={S.barPair}><div style={{...S.bar,height:`${(b.income/maxBar)*80}px`,background:"linear-gradient(180deg,#4ade80,#16a34a)"}}/><div style={{...S.bar,height:`${(b.expense/maxBar)*80}px`,background:"linear-gradient(180deg,#f87171,#dc2626)"}}/></div><div style={S.barLabel}>{b.label}</div></div>))}</div><div style={S.barLegend}><span><span style={{...S.dot,background:GREEN}}/>รายได้</span><span><span style={{...S.dot,background:RED}}/>รายจ่าย</span></div></div>
+      {topExpenses.length>0&&(<div style={S.section}><div style={S.sectionTitle}>💸 หมวดรายจ่ายหลัก</div>{topExpenses.map(([cat,amount])=>{const pct=totalExp>0?(amount/totalExp)*100:0;return(<div key={cat} style={S.catRow}><span style={S.catIcon}>{getCatIcon(cat)}</span><div style={S.catInfo}><div style={S.catName}>{getCatLabel(cat)}</div><div style={S.catBarWrap}><div style={{...S.catBar,width:`${pct}%`}}/></div></div><span style={S.catAmt}>{formatK(Math.round(amount))}</span></div>);})}</div>)}
       <div style={S.section}>
-        <div style={S.sectionTitle}>🎯 เป้าหมายรายเดือน</div>
-        <div style={S.progressBar}><div style={{...S.progressFill,width:`${targetRate}%`}} className="progressAnim"/></div>
-        <div style={S.progressText}><span style={{color:GREEN}}>{formatCurrency(monthData.income)}</span><span style={{color:TEXT_DIM}}> / {formatCurrency(targetGoal)}</span><span style={{color:GOLD,marginLeft:8}}>{targetRate.toFixed(0)}%</span></div>
-      </div>
-      <div style={S.section}>
-        <div style={S.sectionTitle}>📊 สัดส่วนกำไร</div>
-        <div style={S.donutRow}>
-          <DonutChart rate={Math.max(0,profitRate)}/>
-          <div style={S.donutLegend}>
-            <div style={S.legendItem}><span style={{...S.dot,background:GREEN}}/><span style={S.legendText}>กำไร {Math.max(0,profitRate).toFixed(1)}%</span></div>
-            <div style={S.legendItem}><span style={{...S.dot,background:RED}}/><span style={S.legendText}>รายจ่าย {Math.max(0,100-profitRate).toFixed(1)}%</span></div>
-            <div style={{marginTop:8,color:currentData.profit>=0?GREEN:RED,fontSize:18,fontWeight:700}}>{formatCurrency(Math.round(currentData.profit))}</div>
-          </div>
-        </div>
-      </div>
-      <div style={S.section}>
-        <div style={S.sectionTitle}>📈 ภาพรวมรายรับ-รายจ่าย</div>
-        <div style={S.barChart}>{bars.map((b,i)=>(<div key={i} style={S.barGroup}><div style={S.barPair}><div style={{...S.bar,height:`${(b.income/maxBar)*80}px`,background:"linear-gradient(180deg,#4ade80,#16a34a)"}}/><div style={{...S.bar,height:`${(b.expense/maxBar)*80}px`,background:"linear-gradient(180deg,#f87171,#dc2626)"}}/></div><div style={S.barLabel}>{b.label}</div></div>))}</div>
-        <div style={S.barLegend}><span><span style={{...S.dot,background:GREEN}}/>รายได้</span><span><span style={{...S.dot,background:RED}}/>รายจ่าย</span></div>
-      </div>
-      {topExpenses.length>0&&(<div style={S.section}>
-        <div style={S.sectionTitle}>💸 หมวดรายจ่ายหลัก</div>
-        {topExpenses.map(([cat,amount])=>{const pct=totalExp>0?(amount/totalExp)*100:0;return(<div key={cat} style={S.catRow}><span style={S.catIcon}>{getCatIcon(cat)}</span><div style={S.catInfo}><div style={S.catName}>{getCatLabel(cat)}</div><div style={S.catBarWrap}><div style={{...S.catBar,width:`${pct}%`}}/></div></div><span style={S.catAmt}>{formatK(Math.round(amount))}</span></div>);})}
-      </div>)}
-      <div style={S.section}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div style={S.sectionTitle}>✦ Daily Target — 30 วัน</div>
-          <div style={S.streakBadge}>🔥 {streak} วัน</div>
-        </div>
-        <div style={S.calStats}>
-          <div style={S.calStatBox}><div style={{color:GOLD,fontSize:20,fontWeight:800}}>{doneCount}</div><div style={{color:TEXT_DIM,fontSize:11}}>ทำแล้ว</div></div>
-          <div style={S.calStatBox}><div style={{color:TEXT_MID,fontSize:20,fontWeight:800}}>{30-doneCount}</div><div style={{color:TEXT_DIM,fontSize:11}}>ยังไม่ทำ</div></div>
-          <div style={S.calStatBox}><div style={{color:GREEN,fontSize:20,fontWeight:800}}>{((doneCount/30)*100).toFixed(0)}%</div><div style={{color:TEXT_DIM,fontSize:11}}>สำเร็จ</div></div>
-        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={S.sectionTitle}>✦ Daily Target — 30 วัน</div><div style={S.streakBadge}>🔥 {streak} วัน</div></div>
+        <div style={S.calStats}><div style={S.calStatBox}><div style={{color:GOLD,fontSize:20,fontWeight:800}}>{doneCount}</div><div style={{color:TEXT_DIM,fontSize:11}}>ทำแล้ว</div></div><div style={S.calStatBox}><div style={{color:TEXT_MID,fontSize:20,fontWeight:800}}>{30-doneCount}</div><div style={{color:TEXT_DIM,fontSize:11}}>ยังไม่ทำ</div></div><div style={S.calStatBox}><div style={{color:GREEN,fontSize:20,fontWeight:800}}>{((doneCount/30)*100).toFixed(0)}%</div><div style={{color:TEXT_DIM,fontSize:11}}>สำเร็จ</div></div></div>
         <div style={S.calGrid}>{calDays.map(({key,day,month,done,isToday})=>(<button key={key} style={{...S.calDay,...(done?S.calDone:{}),...(isToday?S.calToday:{})}} onClick={()=>toggleTarget(key)}><span style={S.calDayNum}>{day}</span>{done&&<span style={S.calCheck}>✓</span>}</button>))}</div>
         <div style={{marginTop:12}}><div style={{...S.progressBar,height:4}}><div style={{...S.progressFill,width:`${(doneCount/30)*100}%`}}/></div></div>
         <div style={S.calLegend}><span><span style={{...S.dot,background:GOLD}}/>ทำแล้ว</span><span><span style={{...S.dot,background:BORDER}}/>ยังไม่ทำ</span></div>
@@ -199,62 +171,18 @@ function Dashboard({period,setPeriod,todayData,monthData,yearData,targetGoal,dat
     <div style={S.dashWrap} className="fadeIn">
       <div style={S.addTitle}>🗂️ วิเคราะห์หมวดหมู่</div>
       <div style={S.periodRow}>{["daily","monthly","yearly"].map(p=>(<button key={p} style={{...S.periodBtn,...(period===p?S.periodActive:{})}} onClick={()=>setPeriod(p)}>{p==="daily"?"วัน":p==="monthly"?"เดือน":"ปี"}</button>))}</div>
-      <div style={S.typeToggle}>
-        <button style={{...S.typeBtn,...(activeTab==="income"?S.typeBtnIncome:{})}} onClick={()=>setActiveTab("income")}>↑ รายได้</button>
-        <button style={{...S.typeBtn,...(activeTab==="expense"?S.typeBtnExpense:{})}} onClick={()=>setActiveTab("expense")}>↓ รายจ่าย</button>
-      </div>
+      <div style={S.typeToggle}><button style={{...S.typeBtn,...(activeTab==="income"?S.typeBtnIncome:{})}} onClick={()=>setActiveTab("income")}>↑ รายได้</button><button style={{...S.typeBtn,...(activeTab==="expense"?S.typeBtnExpense:{})}} onClick={()=>setActiveTab("expense")}>↓ รายจ่าย</button></div>
       <div style={S.section}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-          <div style={S.sectionTitle}>{activeTab==="expense"?"รายจ่ายทั้งหมด":"รายได้ทั้งหมด"}</div>
-          <div style={{color:activeTab==="expense"?RED:GREEN,fontWeight:800,fontSize:16}}>{formatCurrency(Math.round(total))}</div>
-        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><div style={S.sectionTitle}>{activeTab==="expense"?"รายจ่ายทั้งหมด":"รายได้ทั้งหมด"}</div><div style={{color:activeTab==="expense"?RED:GREEN,fontWeight:800,fontSize:16}}>{formatCurrency(Math.round(total))}</div></div>
         {entries.length===0&&<div style={{color:TEXT_DIM,textAlign:"center",padding:"20px 0"}}>ยังไม่มีข้อมูลครับ</div>}
-        {entries.map(([cat,amount],i)=>{
-          const pct=total>0?(amount/total)*100:0;
-          const color=CAT_COLORS[i%CAT_COLORS.length];
-          return(
-            <div key={cat} style={{marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                <span style={{fontSize:18}}>{getCatIcon(cat)}</span>
-                <div style={{flex:1}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:13,color:TEXT_MAIN,fontWeight:600}}>{getCatLabel(cat)}</span>
-                    <span style={{fontSize:13,color,fontWeight:700}}>{formatCurrency(Math.round(amount))}</span>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
-                    <div style={{flex:1,height:6,background:BORDER,borderRadius:999,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:999,transition:"width 0.8s ease"}}/>
-                    </div>
-                    <span style={{fontSize:11,color:TEXT_DIM,minWidth:32,textAlign:"right"}}>{pct.toFixed(1)}%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {entries.map(([cat,amount],i)=>{const pct=total>0?(amount/total)*100:0;const color=CAT_COLORS[i%CAT_COLORS.length];return(<div key={cat} style={{marginBottom:14}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:18}}>{getCatIcon(cat)}</span><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:13,color:TEXT_MAIN,fontWeight:600}}>{getCatLabel(cat)}</span><span style={{fontSize:13,color,fontWeight:700}}>{formatCurrency(Math.round(amount))}</span></div><div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}><div style={{flex:1,height:6,background:BORDER,borderRadius:999,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:999,transition:"width 0.8s ease"}}/></div><span style={{fontSize:11,color:TEXT_DIM,minWidth:32,textAlign:"right"}}>{pct.toFixed(1)}%</span></div></div></div></div>);})}
       </div>
-      {entries.length>0&&(
-        <div style={S.section}>
-          <div style={S.sectionTitle}>สัดส่วน</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
-            {entries.map(([cat,amount],i)=>{
-              const pct=total>0?(amount/total)*100:0;
-              const color=CAT_COLORS[i%CAT_COLORS.length];
-              return(<div key={cat} style={{display:"flex",alignItems:"center",gap:4,background:BG_CARD,border:`1px solid ${BORDER}`,borderRadius:20,padding:"4px 10px"}}>
-                <span style={{width:8,height:8,borderRadius:"50%",background:color,display:"inline-block"}}/>
-                <span style={{fontSize:11,color:TEXT_MID}}>{getCatIcon(cat)} {getCatLabel(cat)}</span>
-                <span style={{fontSize:11,color,fontWeight:700}}>{pct.toFixed(0)}%</span>
-              </div>);
-            })}
-          </div>
-        </div>
-      )}
+      {entries.length>0&&(<div style={S.section}><div style={S.sectionTitle}>สัดส่วน</div><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>{entries.map(([cat,amount],i)=>{const pct=total>0?(amount/total)*100:0;const color=CAT_COLORS[i%CAT_COLORS.length];return(<div key={cat} style={{display:"flex",alignItems:"center",gap:4,background:BG_CARD,border:`1px solid ${BORDER}`,borderRadius:20,padding:"4px 10px"}}><span style={{width:8,height:8,borderRadius:"50%",background:color,display:"inline-block"}}/><span style={{fontSize:11,color:TEXT_MID}}>{getCatIcon(cat)} {getCatLabel(cat)}</span><span style={{fontSize:11,color,fontWeight:700}}>{pct.toFixed(0)}%</span></div>);})}</div></div>)}
     </div>
   );
 }
 
 function DonutChart({rate}){const r=40,cx=50,cy=50,circ=2*Math.PI*r,dash=(rate/100)*circ;return(<svg width="100" height="100" viewBox="0 0 100 100"><defs><linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={GOLD_DARK}/><stop offset="100%" stopColor={GOLD_LIGHT}/></linearGradient></defs><circle cx={cx} cy={cy} r={r} fill="none" stroke={BORDER} strokeWidth="12"/><circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#goldGrad)" strokeWidth="12" strokeDasharray={`${dash} ${circ-dash}`} strokeLinecap="round" strokeDashoffset={circ/4} style={{transition:"stroke-dasharray 1s ease"}}/><text x={cx} y={cy+5} textAnchor="middle" fill={GOLD_LIGHT} fontSize="13" fontWeight="700">{rate.toFixed(0)}%</text></svg>);}
-
 function StatBox({label,value,color}){return(<div style={S.statBox}><div style={S.statLabel}>{label}</div><div style={{...S.statValue,color}}>{formatK(Math.round(value))}</div></div>);}
 
 function AddEntry({form,setForm,addEntry,selectedDate,setSelectedDate}){
@@ -262,34 +190,71 @@ function AddEntry({form,setForm,addEntry,selectedDate,setSelectedDate}){
   const showNote=isOther(form.cat);
   return(<div style={S.addWrap} className="fadeIn">
     <div style={S.addTitle}>เพิ่มรายการ</div>
-    <div style={S.typeToggle}>
-      <button style={{...S.typeBtn,...(form.type==="income"?S.typeBtnIncome:{})}} onClick={()=>setForm({...form,type:"income",cat:"salary",note:""})}>↑ รายได้</button>
-      <button style={{...S.typeBtn,...(form.type==="expense"?S.typeBtnExpense:{})}} onClick={()=>setForm({...form,type:"expense",cat:"food",note:""})}>↓ รายจ่าย</button>
-    </div>
+    <div style={S.typeToggle}><button style={{...S.typeBtn,...(form.type==="income"?S.typeBtnIncome:{})}} onClick={()=>setForm({...form,type:"income",cat:"salary",note:""})}>↑ รายได้</button><button style={{...S.typeBtn,...(form.type==="expense"?S.typeBtnExpense:{})}} onClick={()=>setForm({...form,type:"expense",cat:"food",note:""})}>↓ รายจ่าย</button></div>
     <div style={S.field}><label style={S.label}>วันที่</label><input type="date" style={S.input} value={selectedDate} onChange={(e)=>setSelectedDate(e.target.value)}/></div>
     <div style={S.field}><label style={S.label}>หมวดหมู่</label><div style={S.catGrid}>{cats.map(c=>(<button key={c.id} style={{...S.catChip,...(form.cat===c.id?S.catChipActive:{})}} onClick={()=>setForm({...form,cat:c.id,note:""})}>{c.icon} {c.label}</button>))}</div></div>
-    {showNote&&(
-      <div style={S.field} className="fadeIn">
-        <label style={S.label}>หมายเหตุ (ระบุรายละเอียด)</label>
-        <input type="text" style={S.input} placeholder="เช่น โบนัส, ค่าน้ำค่าไฟ..." value={form.note} onChange={(e)=>setForm({...form,note:e.target.value})}/>
-      </div>
-    )}
+    {showNote&&(<div style={S.field} className="fadeIn"><label style={S.label}>หมายเหตุ (ระบุรายละเอียด)</label><input type="text" style={S.input} placeholder="เช่น โบนัส, ค่าน้ำค่าไฟ..." value={form.note} onChange={(e)=>setForm({...form,note:e.target.value})}/></div>)}
     <div style={S.field}><label style={S.label}>จำนวนเงิน (฿)</label><input type="number" style={S.input} placeholder="0" value={form.amount} onChange={(e)=>setForm({...form,amount:e.target.value})}/></div>
     <button style={S.submitBtn} onClick={addEntry}>✦ บันทึกรายการ</button>
   </div>);
 }
 
-function History({data,now,getDayTotals,setSelectedDate,setView}){
+function History({data,now,getDayTotals,setEditModal,getCatLabel,getCatIcon}){
+  const [expanded,setExpanded]=useState(null);
   const days=[];for(let i=0;i<30;i++){const d=new Date(now);d.setDate(d.getDate()-i);const key=d.toISOString().split("T")[0];if(data[key])days.push({key,d});}
   return(<div style={S.histWrap} className="fadeIn">
     <div style={S.addTitle}>ประวัติ 30 วัน</div>
     {days.length===0&&<div style={{color:TEXT_DIM,textAlign:"center",marginTop:40}}>ยังไม่มีข้อมูล<br/>เริ่มเพิ่มรายการได้เลย ✦</div>}
-    {days.map(({key,d})=>{const t=getDayTotals(key);return(<button key={key} style={S.histRow} onClick={()=>{setSelectedDate(key);setView("add");}}>
-      <div style={S.histDate}><div style={S.histDay}>{d.getDate()}</div><div style={S.histMonth}>{MONTHS_TH[d.getMonth()]}</div></div>
-      <div style={S.histStats}><div style={{color:GREEN,fontSize:13}}>+{formatK(Math.round(t.income))}</div><div style={{color:RED,fontSize:13}}>-{formatK(Math.round(t.expense))}</div></div>
-      <div style={{color:t.profit>=0?GREEN:RED,fontWeight:700,fontSize:15}}>{t.profit>=0?"+":""}{formatK(Math.round(t.profit))}</div>
-    </button>);})}
+    {days.map(({key,d})=>{
+      const t=getDayTotals(key);const isOpen=expanded===key;const dayData=data[key];
+      return(<div key={key} style={{marginBottom:8}}>
+        <button style={S.histRow} onClick={()=>setExpanded(isOpen?null:key)}>
+          <div style={S.histDate}><div style={S.histDay}>{d.getDate()}</div><div style={S.histMonth}>{MONTHS_TH[d.getMonth()]}</div></div>
+          <div style={S.histStats}><div style={{color:GREEN,fontSize:13}}>+{formatK(Math.round(t.income))}</div><div style={{color:RED,fontSize:13}}>-{formatK(Math.round(t.expense))}</div></div>
+          <div style={{color:t.profit>=0?GREEN:RED,fontWeight:700,fontSize:15}}>{t.profit>=0?"+":""}{formatK(Math.round(t.profit))}</div>
+          <div style={{color:TEXT_DIM,fontSize:12,marginLeft:4}}>{isOpen?"▲":"▼"}</div>
+        </button>
+        {isOpen&&(<div style={S.entryList} className="fadeIn">
+          {["income","expense"].map(type=>(dayData[type]||[]).map((entry,idx)=>{
+            const cats=type==="income"?CATEGORIES.income:CATEGORIES.expense;
+            const catInfo=cats.find(c=>c.id===entry.cat)||{icon:"💰",label:entry.cat};
+            const label=entry.note?`${catInfo.label}: ${entry.note}`:catInfo.label;
+            return(<div key={`${type}-${idx}`} style={S.entryItem}>
+              <span style={{fontSize:16}}>{catInfo.icon}</span>
+              <div style={{flex:1}}><div style={{fontSize:13,color:TEXT_MAIN}}>{label}</div><div style={{fontSize:11,color:TEXT_DIM}}>{type==="income"?"รายได้":"รายจ่าย"}</div></div>
+              <span style={{color:type==="income"?GREEN:RED,fontWeight:700,fontSize:14}}>{type==="income"?"+":"-"}{formatK(Math.round(entry.amount))}</span>
+              <button style={S.editBtn} onClick={()=>setEditModal({dateKey:key,type,index:idx,entry:{...entry}})}>✏️</button>
+            </div>);
+          }))}
+        </div>)}
+      </div>);
+    })}
   </div>);
+}
+
+function EditModal({modal,setEditModal,deleteEntry,saveEdit}){
+  const {dateKey,type,index,entry}=modal;
+  const [editEntry,setEditEntry]=useState({...entry});
+  const [confirmDelete,setConfirmDelete]=useState(false);
+  const cats=type==="income"?CATEGORIES.income:CATEGORIES.expense;
+  const showNote=isOther(editEntry.cat);
+  return(
+    <div style={S.modalOverlay} onClick={()=>setEditModal(null)}>
+      <div style={S.modalBox} onClick={e=>e.stopPropagation()} className="fadeIn">
+        <div style={S.modalTitle}>✏️ แก้ไขรายการ</div>
+        <div style={{fontSize:12,color:TEXT_DIM,marginBottom:16}}>{type==="income"?"รายได้":"รายจ่าย"} · {dateKey}</div>
+        <div style={S.field}><label style={S.label}>หมวดหมู่</label><div style={S.catGrid}>{cats.map(c=>(<button key={c.id} style={{...S.catChip,...(editEntry.cat===c.id?S.catChipActive:{})}} onClick={()=>setEditEntry({...editEntry,cat:c.id,note:""})}>{c.icon} {c.label}</button>))}</div></div>
+        {showNote&&(<div style={S.field}><label style={S.label}>หมายเหตุ</label><input type="text" style={S.input} placeholder="ระบุรายละเอียด..." value={editEntry.note||""} onChange={(e)=>setEditEntry({...editEntry,note:e.target.value})}/></div>)}
+        <div style={S.field}><label style={S.label}>จำนวนเงิน (฿)</label><input type="number" style={S.input} value={editEntry.amount} onChange={(e)=>setEditEntry({...editEntry,amount:parseFloat(e.target.value)||0})}/></div>
+        <button style={S.submitBtn} onClick={()=>{const e={cat:editEntry.cat,amount:editEntry.amount};if(isOther(editEntry.cat)&&editEntry.note?.trim())e.note=editEntry.note.trim();saveEdit(dateKey,type,index,e);}}>✦ บันทึกการแก้ไข</button>
+        {!confirmDelete
+          ?<button style={S.deleteBtn} onClick={()=>setConfirmDelete(true)}>🗑️ ลบรายการนี้</button>
+          :<div style={{marginTop:10}}><div style={{color:RED,fontSize:13,textAlign:"center",marginBottom:8}}>ยืนยันการลบ?</div><div style={{display:"flex",gap:8}}><button style={{...S.deleteBtn,flex:1}} onClick={()=>deleteEntry(dateKey,type,index)}>ลบเลย</button><button style={{...S.cancelBtn,flex:1}} onClick={()=>setConfirmDelete(false)}>ยกเลิก</button></div></div>
+        }
+        <button style={S.cancelBtn} onClick={()=>setEditModal(null)}>ปิด</button>
+      </div>
+    </div>
+  );
 }
 
 const S={
@@ -369,18 +334,26 @@ const S={
   catChipActive:{background:"#1A1305",border:`1px solid ${GOLD}`,color:GOLD},
   submitBtn:{width:"100%",padding:"14px",marginTop:8,background:`linear-gradient(135deg,${GOLD_DARK},${GOLD})`,border:"none",borderRadius:16,color:"#0A0700",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"1px",transition:"opacity 0.2s"},
   histWrap:{padding:"16px"},
-  histRow:{width:"100%",display:"flex",alignItems:"center",gap:12,background:BG_CARD,border:`1px solid ${BORDER_GOLD}`,borderRadius:14,padding:"12px 14px",marginBottom:8,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s",boxSizing:"border-box"},
+  histRow:{width:"100%",display:"flex",alignItems:"center",gap:12,background:BG_CARD,border:`1px solid ${BORDER_GOLD}`,borderRadius:14,padding:"12px 14px",cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s",boxSizing:"border-box"},
   histDate:{textAlign:"center",minWidth:32},
   histDay:{fontSize:18,fontWeight:800,color:TEXT_MAIN},
   histMonth:{fontSize:10,color:TEXT_DIM},
   histStats:{flex:1,display:"flex",flexDirection:"column",gap:2},
+  entryList:{background:BG_SECTION,border:`1px solid ${BORDER}`,borderTop:"none",borderRadius:"0 0 14px 14px",padding:"8px 12px",marginTop:-2},
+  entryItem:{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BORDER}`},
+  editBtn:{background:"none",border:`1px solid ${BORDER_GOLD}`,borderRadius:8,padding:"4px 8px",fontSize:14,cursor:"pointer",color:GOLD},
+  modalOverlay:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.8)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:1000},
+  modalBox:{background:"#0E0B05",border:`1px solid ${BORDER_GOLD}`,borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",maxWidth:430,maxHeight:"85vh",overflowY:"auto"},
+  modalTitle:{fontSize:18,fontWeight:800,color:GOLD_LIGHT,marginBottom:4},
+  deleteBtn:{width:"100%",padding:"12px",marginTop:10,background:"#2d0a0a",border:"1px solid #f87171",borderRadius:12,color:RED,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},
+  cancelBtn:{width:"100%",padding:"12px",marginTop:8,background:BG_CARD,border:`1px solid ${BORDER}`,borderRadius:12,color:TEXT_DIM,fontSize:14,cursor:"pointer",fontFamily:"inherit"},
 };
 
 const css=`
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700;800&display=swap');
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:#080603;}
-  .fadeIn{animation:fadeIn 0.4s ease;}
+  .fadeIn{animation:fadeIn 0.3s ease;}
   @keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
   .cardHover:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(201,168,76,0.15);}
   .progressAnim{animation:grow 1.2s ease;}
