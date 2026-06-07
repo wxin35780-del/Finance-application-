@@ -182,7 +182,6 @@ export default function App() {
 
 function SCard({label,value,color,icon,big}){return(<div style={{...S.card,...(big?S.cardBig:{})}} className="cardHover"><div style={{...S.cardIcon,color}}>{icon}</div><div style={S.cardLabel}>{label}</div><div style={{...S.cardValue,color}}>{formatK(Math.abs(Math.round(value)))}</div></div>);}
 function StatBox({label,value,color}){return(<div style={S.statBox}><div style={S.statLabel}>{label}</div><div style={{...S.statValue,color}}>{formatK(Math.round(value))}</div></div>);}
-
 function Dashboard({period,setPeriod,currentStats,monthStats,todayStats,targetGoal,entries,entriesByDate,now,toggleTarget,targets,getCatLabel,getCatIcon}){
   const profitRate=currentStats.income>0?(currentStats.profit/currentStats.income)*100:0;
   const targetRate=Math.min((monthStats.income/targetGoal)*100,100);
