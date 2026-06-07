@@ -239,7 +239,6 @@ function Dashboard({period,setPeriod,currentStats,monthStats,todayStats,targetGo
 }
 
 function DonutChart({rate}){const r=40,cx=50,cy=50,circ=2*Math.PI*r,dash=(rate/100)*circ;return(<svg width="100" height="100" viewBox="0 0 100 100"><defs><linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={GOLD_DARK}/><stop offset="100%" stopColor={GOLD_LIGHT}/></linearGradient></defs><circle cx={cx} cy={cy} r={r} fill="none" stroke={BORDER} strokeWidth="12"/><circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#goldGrad)" strokeWidth="12" strokeDasharray={`${dash} ${circ-dash}`} strokeLinecap="round" strokeDashoffset={circ/4} style={{transition:"stroke-dasharray 1s ease"}}/><text x={cx} y={cy+5} textAnchor="middle" fill={GOLD_LIGHT} fontSize="13" fontWeight="700">{rate.toFixed(0)}%</text></svg>);}
-function StatBox({label,value,color}){return(<div style={S.statBox}><div style={S.statLabel}>{label}</div><div style={{...S.statValue,color}}>{formatK(Math.round(value))}</div></div>);}
 
 function AddEntry({form,setForm,addEntry}){
   const cats=form.type==="income"?CATEGORIES.income:CATEGORIES.expense;
